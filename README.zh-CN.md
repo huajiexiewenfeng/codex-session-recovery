@@ -23,6 +23,16 @@ Codex Desktop 更新后，部分用户可能遇到这些现象：
 
 更常见的问题是：新版 Codex UI 通过当前索引、项目映射或精确 `cwd` 查询时，找不到旧数据。
 
+## 截图
+
+Skill 使用截图：dry-run 阶段先发现本地历史 Session、缺失的侧边栏/项目元数据，以及 Windows `cwd` 精确匹配风险。
+
+![Codex Session Recovery skill 使用截图](assets/skill-usage.png)
+
+恢复成功截图：修复元数据并规范化路径之后，历史项目会话重新出现在 Codex Desktop 中。
+
+![Codex Session Recovery 恢复成功截图](assets/recovery-success.png)
+
 ## 安全策略
 
 这个 skill 的恢复流程偏保守：
@@ -162,4 +172,3 @@ npx skills add . --list
 ## 许可证
 
 MIT
-

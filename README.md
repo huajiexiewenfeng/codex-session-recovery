@@ -19,6 +19,16 @@ After a Codex Desktop update, some users see symptoms such as:
 
 In these cases, the session data may not be deleted. The new Codex UI may simply be unable to find it through the current index, project mapping, or exact `cwd` lookup.
 
+## Screenshots
+
+Skill usage: dry-run finds local history sessions, missing sidebar/project metadata, and Windows `cwd` exact-match risk before writing.
+
+![Codex Session Recovery skill usage](assets/skill-usage.png)
+
+Recovery result: after metadata repair and path normalization, the historical project session appears in Codex Desktop again.
+
+![Codex Session Recovery success](assets/recovery-success.png)
+
 ## Safety
 
 The skill is designed for local recovery and is intentionally conservative:
@@ -156,4 +166,3 @@ npx skills add . --list
 ## License
 
 MIT
-
