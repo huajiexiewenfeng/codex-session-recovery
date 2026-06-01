@@ -185,7 +185,9 @@ $skill = "C:\Users\admin\.codex\skills\codex-session-recovery"
 & $py "$skill\scripts\surface_codex_sidebar_threads.py" --per-project 2 --max-total 50 --write --report-path "C:\tmp\codex-sidebar-surface.json"
 ```
 
-   - If a pin/unpin test proves the UI can show a hydrated old thread but loses it after restart, run the all-session form after Codex is closed:
+   - If a pin/unpin test proves the UI can show a hydrated old thread but loses it after restart, do not promote every session into the recent page. Promoting all sessions can let large projects dominate the first 50 rows again. Use the bounded round-robin form above (`--per-project 2 --max-total 50`) so each project gets representative threads in the first recent page.
+
+   - Only use the all-session form as a metadata normalization pass, not as the UI hydration step:
 
 ```powershell
 $py = "C:\Users\admin\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"
@@ -279,7 +281,7 @@ $skill = "C:\Users\admin\.codex\skills\codex-session-recovery"
 Start-Process -FilePath powershell.exe -ArgumentList @("-NoProfile","-ExecutionPolicy","Bypass","-File","$skill\scripts\run_recovery_after_codex_exit.ps1","-ProjectRoot",(Get-Location).Path,"-StopCodexFirst","-SurfaceSidebar","-SurfacePerProject","2","-SurfaceMaxTotal","50") -WindowStyle Hidden
 ```
 
-For all restored interactive sessions across all projects, use `-SurfacePerProject 0 -SurfaceMaxTotal 0`. This may update many JSONL rollout files; it is intended for confirmed UI-hydration failures after a successful pin/unpin test.
+For metadata normalization across all restored interactive sessions, use `-SurfacePerProject 0 -SurfaceMaxTotal 0`. This may update many JSONL rollout files, but it is not a replacement for the bounded first-page UI hydration step. After running all-session normalization, run bounded surfacing again with `-SurfacePerProject 2 -SurfaceMaxTotal 50`.
 
 Immediately verify helper takeover:
 

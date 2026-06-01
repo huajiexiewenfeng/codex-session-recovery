@@ -4,7 +4,7 @@
 
 Codex Session Recovery Skill is an unofficial recovery workflow for Codex Desktop project history disappearing after updates. It helps recover local sessions that still exist on disk but are no longer visible in the new Codex UI because local session metadata, project assignments, sidebar state, SQLite `cwd` values, or Windows path formats no longer match.
 
-Codex Desktop 26.527 also has a sidebar hydration failure where restored sessions are visible when pinned, but disappear from project sections after restart. The recovery skill now includes sidebar surfacing that updates JSONL rollout completion timestamps, SQLite ordering metadata, and global project mappings together, with backups, so app-server read-repair does not undo the fix.
+Codex Desktop 26.527 also has a sidebar hydration failure where restored sessions are visible when pinned, but disappear from project sections after restart. The recovery skill now includes bounded round-robin sidebar surfacing that updates JSONL rollout completion timestamps, SQLite ordering metadata, and global project mappings together, with backups, so app-server read-repair does not undo the fix. For UI recovery, prefer a bounded first-page seed such as `--per-project 2 --max-total 50`; all-session normalization can still leave large projects crowding out smaller projects from the first recent page.
 
 This repository packages the `codex-session-recovery` skill and its helper scripts so it can be installed and reused with Codex Skills.
 

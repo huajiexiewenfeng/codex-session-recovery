@@ -6,7 +6,7 @@ Codex Session Recovery Skill 是一个非官方的 Codex Desktop 历史会话恢
 
 它面向的典型情况是：历史 Session 数据仍然存在于本地磁盘上，但新版 Codex UI 因为本地索引、项目映射、侧边栏状态、SQLite `cwd` 字段或 Windows 路径格式不匹配，无法把旧会话显示出来。
 
-Codex Desktop 26.527 还存在一种侧栏 hydration 问题：历史会话置顶后能显示，取消置顶后本次运行也能回到项目里，但重启后又消失。当前技能已加入侧栏 surfacing 修复，会同时更新 JSONL rollout 的完成时间、SQLite 排序字段和全局项目映射，并写入备份，避免 app-server 重启 read-repair 后把 SQLite-only 修复打回原形。
+Codex Desktop 26.527 还存在一种侧栏 hydration 问题：历史会话置顶后能显示，取消置顶后本次运行也能回到项目里，但重启后又消失。当前技能已加入有界轮询的侧栏 surfacing 修复，会同时更新 JSONL rollout 的完成时间、SQLite 排序字段和全局项目映射，并写入备份，避免 app-server 重启 read-repair 后把 SQLite-only 修复打回原形。UI 恢复时优先使用 `--per-project 2 --max-total 50` 这类首屏种子；全量 metadata 归一化仍可能让会话很多的项目挤占前 50 条，导致小项目再次看起来为空。
 
 这个仓库打包了 `codex-session-recovery` skill 和配套恢复脚本，方便通过 Codex Skills 安装和复用。
 
