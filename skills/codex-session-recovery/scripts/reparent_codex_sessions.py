@@ -16,6 +16,10 @@ def normalize_path(value: str) -> str:
     return os.path.normcase(os.path.normpath(value.replace("\\\\?\\", "")))
 
 
+def same_project_root(value: str, project_root: str) -> bool:
+    return normalize_path(value) == normalize_path(project_root)
+
+
 def timestamp() -> str:
     return dt.datetime.now().strftime("%Y%m%d-%H%M%S")
 
@@ -46,7 +50,7 @@ def update_jsonl_cwd(path: pathlib.Path, old_root: str, new_root: str, stamp: st
             payload = item.get("payload")
             if isinstance(payload, dict):
                 cwd = payload.get("cwd")
-                if isinstance(cwd, str) and normalize_path(cwd).startswith(normalize_path(old_root)):
+                if isinstance(cwd, str) and same_project_root(cwd, old_root):
                     payload["cwd"] = new_root
                     changed = True
 
@@ -69,7 +73,6 @@ def main() -> int:
     codex_home = pathlib.Path(args.codex_home).expanduser().resolve()
     old_root = str(pathlib.Path(args.old_root).resolve())
     new_root = str(pathlib.Path(args.new_root).resolve())
-    old_norm = normalize_path(old_root)
     stamp = timestamp()
 
     db_path = codex_home / "state_5.sqlite"
@@ -83,7 +86,7 @@ def main() -> int:
         rows = list(con.execute("select id,cwd,rollout_path from threads"))
         for row in rows:
             cwd = row["cwd"] or ""
-            if normalize_path(cwd).startswith(old_norm):
+            if same_project_root(cwd, old_root):
                 session_ids.append(row["id"])
                 rollout = (row["rollout_path"] or "").replace("\\\\?\\", "")
                 if rollout:

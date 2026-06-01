@@ -2,7 +2,7 @@
 """Repair Codex Desktop session metadata for a project root.
 
 The script is intentionally conservative:
-- It discovers sessions by exact session_meta cwd prefix.
+- It discovers sessions by exact session_meta cwd match.
 - It backs up mutable metadata before writing.
 - It refuses global-state writes while Codex is running unless explicitly allowed.
 """
@@ -24,6 +24,10 @@ from typing import Any
 def normalize_path(value: str) -> str:
     value = value.replace("\\\\?\\", "")
     return os.path.normcase(os.path.normpath(value))
+
+
+def same_project_root(value: str, project_root: str) -> bool:
+    return normalize_path(value) == normalize_path(project_root)
 
 
 def iso_now() -> str:
@@ -102,7 +106,6 @@ def short_title(text: str) -> str:
 
 def discover_project_sessions(codex_home: pathlib.Path, project_root: str) -> list[dict[str, Any]]:
     sessions_dir = codex_home / "sessions"
-    target = normalize_path(project_root)
     rows: list[dict[str, Any]] = []
     if not sessions_dir.exists():
         return rows
@@ -114,8 +117,7 @@ def discover_project_sessions(codex_home: pathlib.Path, project_root: str) -> li
         payload = first.get("payload") or {}
         session_id = payload.get("id")
         cwd = payload.get("cwd") or ""
-        normalized_cwd = normalize_path(cwd)
-        if not session_id or not normalized_cwd.startswith(target):
+        if not session_id or not same_project_root(cwd, project_root):
             continue
 
         title = "Codex session"
@@ -174,14 +176,13 @@ def read_threads_from_sqlite(codex_home: pathlib.Path, project_root: str) -> lis
     db_path = codex_home / "state_5.sqlite"
     if not db_path.exists():
         return []
-    target = normalize_path(project_root)
     rows: list[dict[str, Any]] = []
     con = sqlite3.connect(str(db_path), timeout=5)
     con.row_factory = sqlite3.Row
     try:
         for row in con.execute("select id,cwd,title,archived,rollout_path,updated_at_ms from threads order by updated_at asc"):
             cwd = row["cwd"] or ""
-            if normalize_path(cwd).startswith(target):
+            if same_project_root(cwd, project_root):
                 rows.append(dict(row))
     finally:
         con.close()

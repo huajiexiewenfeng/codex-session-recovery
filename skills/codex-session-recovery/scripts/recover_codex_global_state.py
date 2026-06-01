@@ -15,6 +15,10 @@ def normalize_path(value: str) -> str:
     return os.path.normcase(os.path.normpath(value.replace("\\\\?\\", "")))
 
 
+def same_project_root(value: str, project_root: str) -> bool:
+    return normalize_path(value) == normalize_path(project_root)
+
+
 def timestamp() -> str:
     return dt.datetime.now().strftime("%Y%m%d-%H%M%S")
 
@@ -42,7 +46,6 @@ def extract_text(content: object) -> str:
 
 
 def discover_sessions(codex_home: pathlib.Path, project_root: str) -> list[dict[str, str]]:
-    target = normalize_path(project_root)
     sessions_dir = codex_home / "sessions"
     sessions: list[dict[str, str]] = []
 
@@ -53,7 +56,7 @@ def discover_sessions(codex_home: pathlib.Path, project_root: str) -> list[dict[
         payload = first.get("payload") or {}
         session_id = payload.get("id")
         cwd = payload.get("cwd") or ""
-        if session_id and normalize_path(cwd).startswith(target):
+        if session_id and same_project_root(cwd, project_root):
             title = "Codex session"
             updated_at = payload.get("timestamp") or dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z")
             try:
