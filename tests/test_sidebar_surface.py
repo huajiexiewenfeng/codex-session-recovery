@@ -89,6 +89,27 @@ class SidebarSurfaceSelectionTests(unittest.TestCase):
         self.assertEqual([item["id"] for item in selected], ["a1", "a2"])
         self.assertEqual({item["_project_root"] for item in selected}, {r"C:\repo\a"})
 
+    def test_offset_selects_next_targeted_project_page(self):
+        rows = [
+            {"id": "a1", "cwd": r"C:\repo\a", "source": "vscode", "archived": 0, "updated_at": 50, "created_at": 1},
+            {"id": "a2", "cwd": r"C:\repo\a", "source": "vscode", "archived": 0, "updated_at": 40, "created_at": 1},
+            {"id": "a3", "cwd": r"C:\repo\a", "source": "vscode", "archived": 0, "updated_at": 30, "created_at": 1},
+            {"id": "a4", "cwd": r"C:\repo\a", "source": "vscode", "archived": 0, "updated_at": 20, "created_at": 1},
+            {"id": "b1", "cwd": r"C:\repo\b", "source": "vscode", "archived": 0, "updated_at": 99, "created_at": 1},
+        ]
+
+        selected = surface.select_threads_for_sidebar(
+            rows,
+            [r"C:\repo\a"],
+            per_project=2,
+            max_total=2,
+            offset_per_project=2,
+            restrict_to_project_roots=True,
+        )
+
+        self.assertEqual([item["id"] for item in selected], ["a3", "a4"])
+        self.assertEqual({item["_project_root"] for item in selected}, {r"C:\repo\a"})
+
     def test_touch_rollout_updates_last_task_complete(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "rollout.jsonl"

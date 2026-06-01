@@ -126,9 +126,10 @@ def select_threads_for_sidebar(
     *,
     per_project: int,
     max_total: int,
+    offset_per_project: int = 0,
     restrict_to_project_roots: bool = False,
 ) -> list[dict[str, Any]]:
-    if per_project < 0 or max_total < 0:
+    if per_project < 0 or max_total < 0 or offset_per_project < 0:
         return []
 
     requested_display_by_norm = {normalize_path(root): root for root in project_roots}
@@ -176,10 +177,10 @@ def select_threads_for_sidebar(
 
     project_limit = per_project
     if project_limit == 0:
-        project_limit = max(len(grouped[norm]) for norm in ordered_norms)
+        project_limit = max(max(0, len(grouped[norm]) - offset_per_project) for norm in ordered_norms)
 
     selected: list[dict[str, Any]] = []
-    for index in range(project_limit):
+    for index in range(offset_per_project, offset_per_project + project_limit):
         for norm in ordered_norms:
             items = grouped[norm]
             if index >= len(items):
@@ -383,6 +384,7 @@ def build_report(
     selected: list[dict[str, Any]],
     per_project: int,
     max_total: int,
+    offset_per_project: int,
     target_project_roots: list[str] | None = None,
 ) -> dict[str, Any]:
     eligible = [row for row in rows if eligible_thread(row)]
@@ -397,6 +399,7 @@ def build_report(
         "eligible_projects": len(by_project),
         "per_project": per_project,
         "max_total": max_total,
+        "offset_per_project": offset_per_project,
         "target_project_roots": target_project_roots or [],
         "selected_count": len(selected),
         "selected_projects": len({item.get("_project_root") for item in selected}),
@@ -418,6 +421,12 @@ def main() -> int:
     parser.add_argument("--codex-home", default=None)
     parser.add_argument("--per-project", type=int, default=2, help="Threads to surface per project root. Use 0 for all.")
     parser.add_argument("--max-total", type=int, default=50, help="Maximum threads to promote. Use 0 for no limit.")
+    parser.add_argument(
+        "--offset-per-project",
+        type=int,
+        default=0,
+        help="Skip this many newest eligible threads per project before selecting. Use for targeted next-page surfacing.",
+    )
     parser.add_argument(
         "--project-root",
         action="append",
@@ -442,9 +451,18 @@ def main() -> int:
         roots,
         per_project=args.per_project,
         max_total=args.max_total,
+        offset_per_project=args.offset_per_project,
         restrict_to_project_roots=bool(target_project_roots),
     )
-    report = build_report(codex_home, rows, selected, args.per_project, args.max_total, target_project_roots)
+    report = build_report(
+        codex_home,
+        rows,
+        selected,
+        args.per_project,
+        args.max_total,
+        args.offset_per_project,
+        target_project_roots,
+    )
 
     report_path = pathlib.Path(args.report_path) if args.report_path else codex_home / f"sidebar-surface-report-{timestamp()}.json"
     if args.write:

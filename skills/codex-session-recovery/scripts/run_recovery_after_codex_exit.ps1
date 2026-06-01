@@ -6,6 +6,7 @@ param(
     [switch]$SurfaceSidebar,
     [int]$SurfacePerProject = 2,
     [int]$SurfaceMaxTotal = 50,
+    [int]$SurfaceOffsetPerProject = 0,
     [string[]]$SurfaceProjectRoot = @()
 )
 
@@ -53,7 +54,7 @@ if (-not $SkipNormalizeCwd) {
 if ($SurfaceSidebar) {
     $surfaceReport = Join-Path "C:\tmp" ("codex-sidebar-surface-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".json")
     "[$(Get-Date -Format o)] Surfacing restored sessions into the sidebar recent page..." | Out-File -FilePath $LogPath -Encoding utf8 -Append
-    $surfaceArgs = @("--write", "--per-project", "$SurfacePerProject", "--max-total", "$SurfaceMaxTotal", "--report-path", $surfaceReport)
+    $surfaceArgs = @("--write", "--per-project", "$SurfacePerProject", "--max-total", "$SurfaceMaxTotal", "--offset-per-project", "$SurfaceOffsetPerProject", "--report-path", $surfaceReport)
     foreach ($root in $SurfaceProjectRoot) {
         if (-not [string]::IsNullOrWhiteSpace($root)) {
             $surfaceArgs += @("--project-root", $root)

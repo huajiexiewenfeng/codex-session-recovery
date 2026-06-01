@@ -6,7 +6,7 @@ Codex Session Recovery Skill is an unofficial recovery workflow for Codex Deskto
 
 Codex Desktop 26.527 also has a sidebar hydration failure where restored sessions are visible when pinned, but disappear from project sections after restart. The recovery skill now includes bounded round-robin sidebar surfacing that updates JSONL rollout completion timestamps, SQLite ordering metadata, and global project mappings together, with backups, so app-server read-repair does not undo the fix. For UI recovery, prefer a bounded first-page seed such as `--per-project 2 --max-total 50`; all-session normalization can still leave large projects crowding out smaller projects from the first recent page.
 
-For a single project that already appears but needs more conversations visible, use targeted surfacing, for example `--project-root "D:\workspace\ai-workspace\linux-web-mysql" --per-project 10 --max-total 10`. Targeted surfacing does not delete other sessions, but using a large value such as 50 for one project can crowd other projects out of Codex Desktop's first recent page.
+For a single project that already appears but needs more conversations visible, use targeted surfacing, for example `--project-root "D:\workspace\ai-workspace\linux-web-mysql" --per-project 10 --max-total 10`. Targeted surfacing does not delete other sessions, but using a large value such as 50 for one project can crowd other projects out of Codex Desktop's first recent page. To bring up the next batch for the same project without using 50 at once, add `--offset-per-project 10`, then repeat with offsets such as 20 or 30.
 
 This repository packages the `codex-session-recovery` skill and its helper scripts so it can be installed and reused with Codex Skills.
 
@@ -95,6 +95,19 @@ Normalize same-root Windows `\\?\` path mismatches:
 
 ```bash
 python -B skills/codex-session-recovery/scripts/reparent_codex_sessions.py --old-root "D:\path\to\project" --new-root "D:\path\to\project" --write
+```
+
+Surface a balanced first page for the Codex Desktop sidebar:
+
+```bash
+python -B skills/codex-session-recovery/scripts/surface_codex_sidebar_threads.py --per-project 2 --max-total 50 --write
+```
+
+Surface more conversations for one project in pages. This works around the UI's first-50 startup cache without crowding every other project out at once:
+
+```bash
+python -B skills/codex-session-recovery/scripts/surface_codex_sidebar_threads.py --project-root "D:\workspace\ai-workspace\linux-web-mysql" --per-project 10 --max-total 10 --write
+python -B skills/codex-session-recovery/scripts/surface_codex_sidebar_threads.py --project-root "D:\workspace\ai-workspace\linux-web-mysql" --offset-per-project 10 --per-project 10 --max-total 10 --write
 ```
 
 Use the Windows helper when Codex Desktop must exit before recovery:

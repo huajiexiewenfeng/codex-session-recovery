@@ -204,6 +204,17 @@ $skill = "C:\Users\admin\.codex\skills\codex-session-recovery"
 & $py "$skill\scripts\surface_codex_sidebar_threads.py" --project-root "D:\workspace\ai-workspace\linux-web-mysql" --per-project 10 --max-total 10 --write --report-path "C:\tmp\codex-sidebar-surface-linux-web-mysql.json"
 ```
 
+   - To bring up the next batch for that same project, do not set one project to 50 unless the user accepts that other projects may temporarily look empty again. Page through the project with `--offset-per-project`. For example, after surfacing the newest 10, surface items 11-20 with:
+
+```powershell
+$py = "C:\Users\admin\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"
+$skill = "C:\Users\admin\.codex\skills\codex-session-recovery"
+& $py "$skill\scripts\surface_codex_sidebar_threads.py" --project-root "D:\workspace\ai-workspace\linux-web-mysql" --offset-per-project 10 --per-project 10 --max-total 10
+& $py "$skill\scripts\surface_codex_sidebar_threads.py" --project-root "D:\workspace\ai-workspace\linux-web-mysql" --offset-per-project 10 --per-project 10 --max-total 10 --write --report-path "C:\tmp\codex-sidebar-surface-linux-web-mysql-page-2.json"
+```
+
+   - `--offset-per-project` works around the fixed first-page cache by changing which batch is promoted. It does not patch Codex Desktop's internal `thread/list limit: 50`. After a targeted page, run the bounded global seed again if other projects become hidden.
+
    - Restart Codex Desktop after write mode so the sidebar rebuilds its recent-thread cache.
 
 ## Commands
@@ -297,6 +308,13 @@ For targeted surfacing after a specific project already appears but needs more t
 ```powershell
 $skill = "C:\Users\admin\.codex\skills\codex-session-recovery"
 Start-Process -FilePath powershell.exe -ArgumentList @("-NoProfile","-ExecutionPolicy","Bypass","-File","$skill\scripts\run_recovery_after_codex_exit.ps1","-ProjectRoot",(Get-Location).Path,"-StopCodexFirst","-SurfaceSidebar","-SurfaceProjectRoot","D:\workspace\ai-workspace\linux-web-mysql","-SurfacePerProject","10","-SurfaceMaxTotal","10") -WindowStyle Hidden
+```
+
+For the next targeted page, add `-SurfaceOffsetPerProject`. This example surfaces items 11-20 for `linux-web-mysql`:
+
+```powershell
+$skill = "C:\Users\admin\.codex\skills\codex-session-recovery"
+Start-Process -FilePath powershell.exe -ArgumentList @("-NoProfile","-ExecutionPolicy","Bypass","-File","$skill\scripts\run_recovery_after_codex_exit.ps1","-ProjectRoot",(Get-Location).Path,"-StopCodexFirst","-SurfaceSidebar","-SurfaceProjectRoot","D:\workspace\ai-workspace\linux-web-mysql","-SurfaceOffsetPerProject","10","-SurfacePerProject","10","-SurfaceMaxTotal","10") -WindowStyle Hidden
 ```
 
 Immediately verify helper takeover:
