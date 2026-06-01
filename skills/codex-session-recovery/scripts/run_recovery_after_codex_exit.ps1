@@ -5,7 +5,8 @@ param(
     [switch]$SkipNormalizeCwd,
     [switch]$SurfaceSidebar,
     [int]$SurfacePerProject = 2,
-    [int]$SurfaceMaxTotal = 50
+    [int]$SurfaceMaxTotal = 50,
+    [string[]]$SurfaceProjectRoot = @()
 )
 
 $ErrorActionPreference = "Stop"
@@ -52,7 +53,13 @@ if (-not $SkipNormalizeCwd) {
 if ($SurfaceSidebar) {
     $surfaceReport = Join-Path "C:\tmp" ("codex-sidebar-surface-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".json")
     "[$(Get-Date -Format o)] Surfacing restored sessions into the sidebar recent page..." | Out-File -FilePath $LogPath -Encoding utf8 -Append
-    & $python $surfaceScript --write --per-project $SurfacePerProject --max-total $SurfaceMaxTotal --report-path $surfaceReport 2>&1 | Out-File -FilePath $LogPath -Encoding utf8 -Append
+    $surfaceArgs = @("--write", "--per-project", "$SurfacePerProject", "--max-total", "$SurfaceMaxTotal", "--report-path", $surfaceReport)
+    foreach ($root in $SurfaceProjectRoot) {
+        if (-not [string]::IsNullOrWhiteSpace($root)) {
+            $surfaceArgs += @("--project-root", $root)
+        }
+    }
+    & $python $surfaceScript @surfaceArgs 2>&1 | Out-File -FilePath $LogPath -Encoding utf8 -Append
     "[$(Get-Date -Format o)] Sidebar surface report: $surfaceReport" | Out-File -FilePath $LogPath -Encoding utf8 -Append
 }
 

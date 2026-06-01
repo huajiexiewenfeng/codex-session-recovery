@@ -8,6 +8,8 @@ Codex Session Recovery Skill 是一个非官方的 Codex Desktop 历史会话恢
 
 Codex Desktop 26.527 还存在一种侧栏 hydration 问题：历史会话置顶后能显示，取消置顶后本次运行也能回到项目里，但重启后又消失。当前技能已加入有界轮询的侧栏 surfacing 修复，会同时更新 JSONL rollout 的完成时间、SQLite 排序字段和全局项目映射，并写入备份，避免 app-server 重启 read-repair 后把 SQLite-only 修复打回原形。UI 恢复时优先使用 `--per-project 2 --max-total 50` 这类首屏种子；全量 metadata 归一化仍可能让会话很多的项目挤占前 50 条，导致小项目再次看起来为空。
 
+如果某个项目已经显示 1-2 条，但需要显示更多历史会话，使用定向 surfacing，例如 `--project-root "D:\workspace\ai-workspace\linux-web-mysql" --per-project 10 --max-total 10`。定向 surfacing 不会删除其它 session，但如果对单个项目设置 50 这种大值，它可能挤占 Codex Desktop 首屏 recent 50 条，让其它项目重启后又看起来为空。
+
 这个仓库打包了 `codex-session-recovery` skill 和配套恢复脚本，方便通过 Codex Skills 安装和复用。
 
 ## 解决什么问题

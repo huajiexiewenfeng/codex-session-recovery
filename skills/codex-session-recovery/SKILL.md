@@ -195,6 +195,15 @@ $skill = "C:\Users\admin\.codex\skills\codex-session-recovery"
 & $py "$skill\scripts\surface_codex_sidebar_threads.py" --per-project 0 --max-total 0 --write --report-path "C:\tmp\codex-sidebar-surface-all.json"
 ```
 
+   - For a project that already shows 1-2 conversations but needs more history visible, run a targeted seed. This does not delete or archive other projects, but large values can crowd other projects out of the first 50 recent rows. Prefer 10-15, then run the bounded global seed again if other projects become hidden:
+
+```powershell
+$py = "C:\Users\admin\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"
+$skill = "C:\Users\admin\.codex\skills\codex-session-recovery"
+& $py "$skill\scripts\surface_codex_sidebar_threads.py" --project-root "D:\workspace\ai-workspace\linux-web-mysql" --per-project 10 --max-total 10
+& $py "$skill\scripts\surface_codex_sidebar_threads.py" --project-root "D:\workspace\ai-workspace\linux-web-mysql" --per-project 10 --max-total 10 --write --report-path "C:\tmp\codex-sidebar-surface-linux-web-mysql.json"
+```
+
    - Restart Codex Desktop after write mode so the sidebar rebuilds its recent-thread cache.
 
 ## Commands
@@ -282,6 +291,13 @@ Start-Process -FilePath powershell.exe -ArgumentList @("-NoProfile","-ExecutionP
 ```
 
 For metadata normalization across all restored interactive sessions, use `-SurfacePerProject 0 -SurfaceMaxTotal 0`. This may update many JSONL rollout files, but it is not a replacement for the bounded first-page UI hydration step. After running all-session normalization, run bounded surfacing again with `-SurfacePerProject 2 -SurfaceMaxTotal 50`.
+
+For targeted surfacing after a specific project already appears but needs more than the first 1-2 conversations, pass one or more `-SurfaceProjectRoot` values. Keep the total conservative, such as 10, because setting a single project to 50 can fill the first recent page and make other projects look empty again:
+
+```powershell
+$skill = "C:\Users\admin\.codex\skills\codex-session-recovery"
+Start-Process -FilePath powershell.exe -ArgumentList @("-NoProfile","-ExecutionPolicy","Bypass","-File","$skill\scripts\run_recovery_after_codex_exit.ps1","-ProjectRoot",(Get-Location).Path,"-StopCodexFirst","-SurfaceSidebar","-SurfaceProjectRoot","D:\workspace\ai-workspace\linux-web-mysql","-SurfacePerProject","10","-SurfaceMaxTotal","10") -WindowStyle Hidden
+```
 
 Immediately verify helper takeover:
 

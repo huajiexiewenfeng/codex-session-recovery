@@ -71,6 +71,24 @@ class SidebarSurfaceSelectionTests(unittest.TestCase):
 
         self.assertEqual([item["id"] for item in selected], ["a1", "b1", "a2"])
 
+    def test_project_root_restriction_only_selects_requested_project(self):
+        rows = [
+            {"id": "a1", "cwd": r"C:\repo\a", "source": "vscode", "archived": 0, "updated_at": 30, "created_at": 1},
+            {"id": "a2", "cwd": r"C:\repo\a", "source": "vscode", "archived": 0, "updated_at": 20, "created_at": 1},
+            {"id": "b1", "cwd": r"C:\repo\b", "source": "vscode", "archived": 0, "updated_at": 99, "created_at": 1},
+        ]
+
+        selected = surface.select_threads_for_sidebar(
+            rows,
+            [r"C:\repo\a"],
+            per_project=10,
+            max_total=10,
+            restrict_to_project_roots=True,
+        )
+
+        self.assertEqual([item["id"] for item in selected], ["a1", "a2"])
+        self.assertEqual({item["_project_root"] for item in selected}, {r"C:\repo\a"})
+
     def test_touch_rollout_updates_last_task_complete(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "rollout.jsonl"

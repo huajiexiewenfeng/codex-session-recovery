@@ -126,17 +126,22 @@ def select_threads_for_sidebar(
     *,
     per_project: int,
     max_total: int,
+    restrict_to_project_roots: bool = False,
 ) -> list[dict[str, Any]]:
     if per_project < 0 or max_total < 0:
         return []
 
+    requested_display_by_norm = {normalize_path(root): root for root in project_roots}
+    requested_norms = set(requested_display_by_norm) if restrict_to_project_roots else set()
     grouped: dict[str, list[dict[str, Any]]] = {}
-    display_by_norm: dict[str, str] = {}
+    display_by_norm: dict[str, str] = dict(requested_display_by_norm)
     for row in rows:
         if not eligible_thread(row):
             continue
         cwd = str(row["cwd"])
         norm = normalize_path(cwd)
+        if restrict_to_project_roots and norm not in requested_norms:
+            continue
         display_by_norm.setdefault(norm, cwd)
         grouped.setdefault(norm, []).append(row)
 
@@ -158,12 +163,13 @@ def select_threads_for_sidebar(
             ordered_norms.append(norm)
             seen.add(norm)
 
-    remaining = sorted(
-        (norm for norm in grouped if norm not in seen),
-        key=lambda norm: int(grouped[norm][0].get("updated_at") or 0),
-        reverse=True,
-    )
-    ordered_norms.extend(remaining)
+    if not restrict_to_project_roots:
+        remaining = sorted(
+            (norm for norm in grouped if norm not in seen),
+            key=lambda norm: int(grouped[norm][0].get("updated_at") or 0),
+            reverse=True,
+        )
+        ordered_norms.extend(remaining)
 
     if not ordered_norms:
         return []
@@ -377,6 +383,7 @@ def build_report(
     selected: list[dict[str, Any]],
     per_project: int,
     max_total: int,
+    target_project_roots: list[str] | None = None,
 ) -> dict[str, Any]:
     eligible = [row for row in rows if eligible_thread(row)]
     by_project: dict[str, int] = {}
@@ -390,6 +397,7 @@ def build_report(
         "eligible_projects": len(by_project),
         "per_project": per_project,
         "max_total": max_total,
+        "target_project_roots": target_project_roots or [],
         "selected_count": len(selected),
         "selected_projects": len({item.get("_project_root") for item in selected}),
         "selected": [
@@ -410,6 +418,12 @@ def main() -> int:
     parser.add_argument("--codex-home", default=None)
     parser.add_argument("--per-project", type=int, default=2, help="Threads to surface per project root. Use 0 for all.")
     parser.add_argument("--max-total", type=int, default=50, help="Maximum threads to promote. Use 0 for no limit.")
+    parser.add_argument(
+        "--project-root",
+        action="append",
+        default=[],
+        help="Restrict surfacing to this exact project root. Repeat for multiple roots.",
+    )
     parser.add_argument("--write", action="store_true")
     parser.add_argument("--report-path", default=None)
     args = parser.parse_args()
@@ -421,14 +435,16 @@ def main() -> int:
         return 2
 
     rows = read_threads(db_path)
-    roots = read_global_state_roots(codex_home)
+    target_project_roots = [root for root in args.project_root if root and root.strip()]
+    roots = target_project_roots or read_global_state_roots(codex_home)
     selected = select_threads_for_sidebar(
         rows,
         roots,
         per_project=args.per_project,
         max_total=args.max_total,
+        restrict_to_project_roots=bool(target_project_roots),
     )
-    report = build_report(codex_home, rows, selected, args.per_project, args.max_total)
+    report = build_report(codex_home, rows, selected, args.per_project, args.max_total, target_project_roots)
 
     report_path = pathlib.Path(args.report_path) if args.report_path else codex_home / f"sidebar-surface-report-{timestamp()}.json"
     if args.write:
