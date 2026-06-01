@@ -23,7 +23,7 @@ The common failure mode is:
 - If Codex Desktop is running, do not write global state unless the user explicitly approves a running-app write. Explain that Electron may overwrite the file again.
 - If the UI still does not show restored threads after `missing_*` counts are zero, do not keep guessing global-state keys. Check whether the visible project root differs from the session `cwd`.
 - `thread/list.cwd` is an exact match filter, not a prefix filter. A thread whose `cwd` is `D:\repo\subdir` may not appear under a UI project whose root is `D:\repo`.
-- Codex Desktop 26.527 builds the project sidebar from a recent-thread cache that starts with `thread/list limit: 50`. If a fresh app-server `thread/list --cwd <root>` returns the old sessions but the UI project still says "No recent chats", the sessions may simply be below the first global recent page. Use `surface_codex_sidebar_threads.py` after backing up SQLite.
+- Codex Desktop 26.527 builds the project sidebar from a recent-thread cache that starts with `thread/list limit: 50`. If a fresh app-server `thread/list --cwd <root>` returns the old sessions but the UI project still says "No recent chats", the sessions may simply be below the first global recent page. Use `surface_codex_sidebar_threads.py` after backing up SQLite, JSONL rollouts, and global state. SQLite-only timestamp updates are not durable because app-server read-repair can rebuild them from JSONL on restart.
 - Treat Windows extended-length paths as a separate exact-match risk. `\\?\D:\repo\project` and `D:\repo\project` normalize to the same filesystem path, but the Codex UI `cwd` filter may not treat them as the same string. If history is still hidden after metadata repair, inspect SQLite `threads.cwd` for a `\\?\` prefix and normalize it with `reparent_codex_sessions.py --old-root <root> --new-root <root> --write`.
 - When the target directory is a Git subdirectory, compare `git rev-parse --show-toplevel` with `session_meta.payload.cwd`. If Codex groups the sidebar by the Git root, reparent matching sessions to the Git root only after backing up SQLite and JSONL files.
 
@@ -66,7 +66,7 @@ The common failure mode is:
    - Run `git -C <project-root> rev-parse --show-toplevel`.
    - If the Git root differs from the project root, repair the display root or reparent sessions to the Git root.
    - If exact `cwd` is correct and a fresh app-server returns the hidden threads, inspect global `thread/list` rank. Codex Desktop may only have loaded the first 50 recent threads into the project sidebar.
-   - In that case, run `surface_codex_sidebar_threads.py` to promote a bounded, round-robin set of restored project threads into the first recent page. This changes only SQLite `updated_at`/`updated_at_ms` ordering fields and writes a backup/report.
+   - In that case, run `surface_codex_sidebar_threads.py` to promote a bounded, round-robin set of restored project threads into the recent cache. This updates JSONL `task_complete.completed_at`, SQLite `updated_at`/`updated_at_ms`, and global project mappings with backups/report.
 9. If recovery needs a restart, tell the user what will happen next and ask whether to perform it automatically. If they agree, run the restart helper. If not, tell them to reopen Codex Desktop and check the project list.
 10. After starting any hidden external helper, verify that it actually took over before claiming it is running:
    - Check that the expected log file exists under the project root, or pass an explicit `-LogPath` under `C:\tmp`.
@@ -176,13 +176,21 @@ If the UI project is the Git root but thread rows use `D:\workspace\drone\clouds
 8. If a visible new test conversation appears but older conversations in the same project do not:
    - Query a fresh app-server with `thread/list` and `cwd=<project-root>`. If both new and old sessions are returned, the data is restored.
    - Query global `thread/list` by `updated_at`; if the old session is ranked after the first page (for example rank 146), the UI has not hydrated that metadata.
-   - Run sidebar surfacing:
+   - Run sidebar surfacing. Use the bounded form to put at least a few threads from each project into the first recent page:
 
 ```powershell
 $py = "C:\Users\admin\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"
 $skill = "C:\Users\admin\.codex\skills\codex-session-recovery"
 & $py "$skill\scripts\surface_codex_sidebar_threads.py" --per-project 2 --max-total 50
 & $py "$skill\scripts\surface_codex_sidebar_threads.py" --per-project 2 --max-total 50 --write --report-path "C:\tmp\codex-sidebar-surface.json"
+```
+
+   - If a pin/unpin test proves the UI can show a hydrated old thread but loses it after restart, run the all-session form after Codex is closed:
+
+```powershell
+$py = "C:\Users\admin\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"
+$skill = "C:\Users\admin\.codex\skills\codex-session-recovery"
+& $py "$skill\scripts\surface_codex_sidebar_threads.py" --per-project 0 --max-total 0 --write --report-path "C:\tmp\codex-sidebar-surface-all.json"
 ```
 
    - Restart Codex Desktop after write mode so the sidebar rebuilds its recent-thread cache.
@@ -264,12 +272,14 @@ $skill = "C:\Users\admin\.codex\skills\codex-session-recovery"
 Start-Process -FilePath powershell.exe -ArgumentList @("-NoProfile","-ExecutionPolicy","Bypass","-File","$skill\scripts\run_recovery_after_codex_exit.ps1","-ProjectRoot",(Get-Location).Path,"-StopCodexFirst") -WindowStyle Hidden
 ```
 
-To also surface old sessions into the sidebar's first recent page after the recovery write:
+To also surface old sessions into the sidebar's recent cache after the recovery write:
 
 ```powershell
 $skill = "C:\Users\admin\.codex\skills\codex-session-recovery"
 Start-Process -FilePath powershell.exe -ArgumentList @("-NoProfile","-ExecutionPolicy","Bypass","-File","$skill\scripts\run_recovery_after_codex_exit.ps1","-ProjectRoot",(Get-Location).Path,"-StopCodexFirst","-SurfaceSidebar","-SurfacePerProject","2","-SurfaceMaxTotal","50") -WindowStyle Hidden
 ```
+
+For all restored interactive sessions across all projects, use `-SurfacePerProject 0 -SurfaceMaxTotal 0`. This may update many JSONL rollout files; it is intended for confirmed UI-hydration failures after a successful pin/unpin test.
 
 Immediately verify helper takeover:
 

@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""Surface restored Codex Desktop sessions in the sidebar's first recent page.
+"""Surface restored Codex Desktop sessions in the sidebar's recent cache.
 
 Codex Desktop 26.527 builds the project sidebar from a recent-thread cache that
 starts with ``thread/list limit: 50``. Older, correctly restored sessions can
 remain hidden when they sit beyond that first global page. This script promotes
-a bounded, round-robin set of interactive local threads by updating only the
-SQLite ``updated_at`` ordering fields, after backing up the database.
+a bounded, round-robin set of interactive local threads by updating both the
+JSONL rollout's final ``task_complete.completed_at`` and the SQLite
+``updated_at`` ordering fields, after backing up the changed files.
+
+Updating SQLite alone is not durable: app-server read-repair can rebuild the
+state DB from JSONL rollouts and revert the surfaced order on restart.
 """
 
 from __future__ import annotations
@@ -32,6 +36,14 @@ def normalize_path(value: str) -> str:
 
 def timestamp() -> str:
     return dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+
+
+def iso_from_ms(timestamp_ms: int) -> str:
+    return (
+        dt.datetime.fromtimestamp(timestamp_ms / 1000, tz=dt.timezone.utc)
+        .isoformat(timespec="milliseconds")
+        .replace("+00:00", "Z")
+    )
 
 
 def get_codex_home(arg: str | None) -> pathlib.Path:
@@ -89,7 +101,7 @@ def read_threads(db_path: pathlib.Path) -> list[dict[str, Any]]:
             dict(row)
             for row in con.execute(
                 """
-                select id, cwd, title, source, archived, updated_at, updated_at_ms, created_at
+                select id, rollout_path, cwd, title, source, archived, updated_at, updated_at_ms, created_at
                 from threads
                 order by updated_at desc, created_at desc
                 """
@@ -115,7 +127,7 @@ def select_threads_for_sidebar(
     per_project: int,
     max_total: int,
 ) -> list[dict[str, Any]]:
-    if per_project <= 0 or max_total <= 0:
+    if per_project < 0 or max_total < 0:
         return []
 
     grouped: dict[str, list[dict[str, Any]]] = {}
@@ -153,8 +165,15 @@ def select_threads_for_sidebar(
     )
     ordered_norms.extend(remaining)
 
+    if not ordered_norms:
+        return []
+
+    project_limit = per_project
+    if project_limit == 0:
+        project_limit = max(len(grouped[norm]) for norm in ordered_norms)
+
     selected: list[dict[str, Any]] = []
-    for index in range(per_project):
+    for index in range(project_limit):
         for norm in ordered_norms:
             items = grouped[norm]
             if index >= len(items):
@@ -162,7 +181,7 @@ def select_threads_for_sidebar(
             item = dict(items[index])
             item["_project_root"] = display_by_norm.get(norm, str(item["cwd"]))
             selected.append(item)
-            if len(selected) >= max_total:
+            if max_total > 0 and len(selected) >= max_total:
                 return selected
     return selected
 
@@ -173,27 +192,148 @@ def backup_database(db_path: pathlib.Path) -> pathlib.Path:
     return backup_path
 
 
+def backup_global_state(global_state_path: pathlib.Path) -> pathlib.Path:
+    backup_path = global_state_path.with_name(f"{global_state_path.name}.backup-sidebar-surface-{timestamp()}")
+    shutil.copy2(global_state_path, backup_path)
+    return backup_path
+
+
+def backup_rollout(rollout_path: pathlib.Path) -> pathlib.Path:
+    backup_path = rollout_path.with_name(f"{rollout_path.name}.backup-sidebar-surface-{timestamp()}")
+    shutil.copy2(rollout_path, backup_path)
+    return backup_path
+
+
+def load_jsonl(path: pathlib.Path) -> list[tuple[str, dict[str, Any] | None]]:
+    rows: list[tuple[str, dict[str, Any] | None]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            rows.append((line, None))
+            continue
+        rows.append((line, json.loads(line)))
+    return rows
+
+
+def write_jsonl(path: pathlib.Path, rows: list[tuple[str, dict[str, Any] | None]]) -> None:
+    text = "\n".join(
+        original if obj is None else json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
+        for original, obj in rows
+    )
+    path.write_text(text + "\n", encoding="utf-8")
+
+
+def find_last_task_complete(rows: list[tuple[str, dict[str, Any] | None]]) -> int | None:
+    found: int | None = None
+    for index, (_, obj) in enumerate(rows):
+        if not isinstance(obj, dict):
+            continue
+        if obj.get("type") != "event_msg":
+            continue
+        payload = obj.get("payload")
+        if isinstance(payload, dict) and payload.get("type") == "task_complete":
+            found = index
+    return found
+
+
+def touch_rollout_completion(rollout_path: pathlib.Path, new_updated_at: int, new_updated_at_ms: int) -> dict[str, Any]:
+    rows = load_jsonl(rollout_path)
+    task_index = find_last_task_complete(rows)
+    if task_index is None:
+        raise ValueError(f"no task_complete event found in {rollout_path}")
+
+    task_obj = rows[task_index][1]
+    assert isinstance(task_obj, dict)
+    payload = task_obj.get("payload")
+    assert isinstance(payload, dict)
+    old_completed_at = payload.get("completed_at")
+    payload["completed_at"] = new_updated_at
+    task_obj["timestamp"] = iso_from_ms(new_updated_at_ms)
+    write_jsonl(rollout_path, rows)
+    return {
+        "rollout_path": str(rollout_path),
+        "old_completed_at": old_completed_at,
+        "new_completed_at": new_updated_at,
+    }
+
+
+def update_global_state_for_threads(codex_home: pathlib.Path, selected: list[dict[str, Any]]) -> dict[str, Any]:
+    global_state_path = codex_home / ".codex-global-state.json"
+    if not global_state_path.exists():
+        return {"updated": False, "backup_path": None, "reason": "global state file not found"}
+
+    state = json.loads(global_state_path.read_text(encoding="utf-8"))
+    changed = False
+    hints = state.setdefault("thread-workspace-root-hints", {})
+    assignments = state.setdefault("thread-project-assignments", {})
+    writable_roots = state.setdefault("thread-writable-roots", {})
+    sidebar_orders = state.setdefault("sidebar-project-thread-orders", {})
+
+    for item in selected:
+        thread_id = str(item["id"])
+        project_root = str(item.get("_project_root") or item.get("cwd") or "")
+        if not project_root:
+            continue
+        if hints.get(thread_id) != project_root:
+            hints[thread_id] = project_root
+            changed = True
+        if assignments.get(thread_id) != project_root:
+            assignments[thread_id] = project_root
+            changed = True
+        if writable_roots.get(thread_id) != [project_root]:
+            writable_roots[thread_id] = [project_root]
+            changed = True
+
+        order = sidebar_orders.setdefault(project_root, [])
+        if thread_id in order:
+            order.remove(thread_id)
+        order.insert(0, thread_id)
+        changed = True
+
+    if not changed:
+        return {"updated": False, "backup_path": None}
+
+    backup_path = backup_global_state(global_state_path)
+    global_state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return {"updated": True, "backup_path": str(backup_path)}
+
+
 def apply_surface(db_path: pathlib.Path, selected: list[dict[str, Any]], report_path: pathlib.Path | None) -> dict[str, Any]:
     if not selected:
         return {"updated": 0, "backup_path": None, "report_path": str(report_path) if report_path else None}
 
+    codex_home = db_path.parent
     backup_path = backup_database(db_path)
     max_existing = max(int(item.get("updated_at") or 0) for item in read_threads(db_path))
     base_seconds = max(int(time.time()), max_existing) + len(selected) + 5
     now_ms = int(time.time() * 1000)
 
     con = sqlite3.connect(str(db_path), timeout=30)
+    rollout_backups: list[dict[str, str]] = []
+    rollout_updates: list[dict[str, Any]] = []
+    errors: list[dict[str, str]] = []
     try:
         con.execute("pragma busy_timeout=30000")
         originals: list[dict[str, Any]] = []
         for index, item in enumerate(selected):
             new_updated_at = base_seconds - index
-            new_updated_at_ms = (base_seconds * 1000) - index
+            new_updated_at_ms = new_updated_at * 1000
+            rollout_path = pathlib.Path(str(item.get("rollout_path") or ""))
+            try:
+                if not rollout_path.exists():
+                    raise FileNotFoundError(str(rollout_path))
+                rollout_backup = backup_rollout(rollout_path)
+                rollout_backups.append({"id": str(item["id"]), "backup_path": str(rollout_backup)})
+                rollout_updates.append(touch_rollout_completion(rollout_path, new_updated_at, new_updated_at_ms))
+            except Exception as exc:
+                errors.append({"id": str(item.get("id")), "error": str(exc)})
+                continue
+
             originals.append(
                 {
                     "id": item["id"],
                     "cwd": item["cwd"],
                     "title": item.get("title"),
+                    "rollout_path": str(rollout_path),
                     "old_updated_at": item.get("updated_at"),
                     "old_updated_at_ms": item.get("updated_at_ms"),
                     "new_updated_at": new_updated_at,
@@ -209,19 +349,26 @@ def apply_surface(db_path: pathlib.Path, selected: list[dict[str, Any]], report_
     finally:
         con.close()
 
+    global_state = update_global_state_for_threads(codex_home, selected)
+
     payload = {
         "created_at": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
-        "backup_path": str(backup_path),
+        "sqlite_backup_path": str(backup_path),
+        "rollout_backups": rollout_backups,
+        "global_state": global_state,
         "db_path": str(db_path),
-        "updated": len(selected),
-        "note": "Only SQLite updated_at/updated_at_ms were changed to make restored threads enter Codex Desktop's first recent page.",
+        "updated": len(originals),
+        "requested": len(selected),
+        "errors": errors,
+        "note": "SQLite and JSONL task_complete timestamps were changed so app-server read-repair keeps restored threads in Codex Desktop's recent cache.",
         "threads": originals,
+        "rollout_updates": rollout_updates,
         "generated_at_ms": now_ms,
     }
     if report_path:
         report_path.parent.mkdir(parents=True, exist_ok=True)
         report_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    return {"updated": len(selected), "backup_path": str(backup_path), "report_path": str(report_path) if report_path else None}
+    return {"updated": len(originals), "backup_path": str(backup_path), "report_path": str(report_path) if report_path else None}
 
 
 def build_report(
@@ -261,8 +408,8 @@ def build_report(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--codex-home", default=None)
-    parser.add_argument("--per-project", type=int, default=2, help="Threads to surface per project root.")
-    parser.add_argument("--max-total", type=int, default=50, help="Maximum threads to promote into the first recent page.")
+    parser.add_argument("--per-project", type=int, default=2, help="Threads to surface per project root. Use 0 for all.")
+    parser.add_argument("--max-total", type=int, default=50, help="Maximum threads to promote. Use 0 for no limit.")
     parser.add_argument("--write", action="store_true")
     parser.add_argument("--report-path", default=None)
     args = parser.parse_args()
